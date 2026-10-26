@@ -1,1 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meet Audio Automation Bot</title>
+    <script src="https://tailwindcss.com"></script>
+    <style>
+        body { background: radial-gradient(circle at center, #1e1b4b, #090514); }
+        .glass { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(12px); border: 1px rgba(255, 255, 255, 0.08) solid; }
+    </style>
+</head>
+<body class="text-gray-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="glass w-full max-w-lg rounded-2xl p-8 shadow-2xl space-y-6">
+        <div class="text-center">
+            <h1 class="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">Meet Dispatch Bot</h1>
+            <p class="text-gray-400 text-sm mt-1">Deploy an isolated audio agent into a call anonymously.</p>
+        </div>
+
+        <form id="botForm" class="space-y-4">
+            <div>
+                <label class="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Meeting Link or Code</label>
+                <input type="text" id="meetUrl" required placeholder="https://google.com" 
+                    class="w-full bg-black/40 border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:border-indigo-500 transition text-sm">
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Bot Custom Identity (Name)</label>
+                <input type="text" id="botName" required placeholder="Anonymous Participant" 
+                    class="w-full bg-black/40 border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:border-indigo-500 transition text-sm">
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Upload Audio File (.mp3 / .wav)</label>
+                <input type="file" id="audioFile" accept="audio/*" required 
+                    class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 file:cursor-pointer bg-black/20 border border-dashed border-gray-700 rounded-lg p-3">
+            </div>
+
+            <button type="submit" id="submitBtn" 
+                class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-medium py-3 rounded-lg transition-all transform active:scale-[0.98] shadow-lg shadow-indigo-500/20 text-sm">
+                Launch Bot
+            </button>
+        </form>
+
+        <!-- Dynamic Status Section -->
+        <div id="statusContainer" class="hidden glass rounded-xl p-4 space-y-2 border-indigo-500/20">
+            <div class="flex items-center justify-between text-xs text-gray-400">
+                <span>Operational Status:</span>
+                <span id="statusBadge" class="px-2 py-0.5 rounded font-mono font-bold bg-amber-500/20 text-amber-400 animate-pulse">INITIALIZING</span>
+            </div>
+            <p id="statusMessage" class="text-sm text-gray-300 font-medium">Preparing system parameters...</p>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('botForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const statusContainer = document.getElementById('statusContainer');
+        const statusBadge = document.getElementById('statusBadge');
+        const statusMessage = document.getElementById('statusMessage');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-50');
+            statusContainer.classList.remove('hidden');
+            
+            updateStatus('CONNECTING', 'Deploying browser instance to cloud network...', 'text-amber-400 bg-amber-500/20');
+
+            const formData = new FormData();
+            formData.append('meetUrl', document.getElementById('meetUrl').value);
+            formData.append('botName', document.getElementById('botName').value);
+            formData.append('audio', document.getElementById('audioFile').files[0]);
+
+            try {
+                const response = await fetch('/run-bot', { method: 'POST', body: formData });
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n').filter(Boolean);
+                    
+                    for (const line of lines) {
+                        try {
+                            const data = JSON.parse(line);
+                            handleStatusUpdate(data);
+                        } catch(e) { /* Handled fragment lines */ }
+                    }
+                }
+            } catch (err) {
+                updateStatus('FAILED', 'Could not establish connection to the task runner.', 'text-red-400 bg-red-500/20');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('opacity-50');
+            }
+        });
+
+        function updateStatus(badge, msg, classes) {
+            statusBadge.className = `px-2 py-0.5 rounded font-mono font-bold ${classes}`;
+            statusBadge.innerText = badge;
+            statusMessage.innerText = msg;
+        }
+
+        function handleStatusUpdate(data) {
+            switch(data.status) {
+                case 'navigating':
+                    updateStatus('ROUTING', 'Loading Google Meet gateway...', 'text-blue-400 bg-blue-500/20');
+                    break;
+                case 'knocking':
+                    updateStatus('LOBBY', 'Knocking. Awaiting host admission authorization...', 'text-amber-400 bg-amber-500/20 intense-pulse');
+                    break;
+                case 'joined_direct':
+                    updateStatus('ACTIVE', 'Instantly joined room. Commencing audio streaming...', 'text-green-400 bg-green-500/20');
+                    break;
+                case 'admitted':
+                    updateStatus('ACTIVE', 'Host authorized admission. Streaming audio target...', 'text-green-400 bg-green-500/20');
+                    break;
+                case 'rejected':
+                    updateStatus('DENIED', 'The meeting host rejected the entry request.', 'text-red-400 bg-red-500/20');
+                    break;
+                case 'playing':
+                    updateStatus('STREAMING', 'Audio broadcast in progress...', 'text-purple-400 bg-purple-500/20');
+                    break;
+                case 'done':
+                    updateStatus('COMPLETED', 'Audio finished. Bot disconnected safely.', 'text-emerald-400 bg-emerald-500/20');
+                    break;
+                case 'error':
+                    updateStatus('ERROR', data.message || 'An operational execution error occurred.', 'text-red-400 bg-red-500/20');
+                    break;
+            }
+        }
+    </script>
+</body>
+</html>
 
